@@ -1,0 +1,361 @@
+/* TraceFix Extension Styles */
+
+#tracefix-popup {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 420px;
+  max-height: 80vh;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #e6edf3;
+  z-index: 99999;
+  overflow: hidden;
+  animation: tracefix-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes tracefix-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header */
+#tracefix-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+#tracefix-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#tracefix-logo {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #f78166, #ff6b6b);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+#tracefix-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6edf3;
+  letter-spacing: 0.01em;
+}
+
+#tracefix-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f78166;
+  background: rgba(247, 129, 102, 0.12);
+  border: 1px solid rgba(247, 129, 102, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+#tracefix-close {
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+  font-size: 16px;
+}
+
+#tracefix-close:hover {
+  color: #e6edf3;
+  background: #30363d;
+}
+
+/* Body */
+#tracefix-body {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: calc(80vh - 56px);
+}
+
+/* Loading state */
+#tracefix-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+}
+
+.tracefix-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid #30363d;
+  border-top-color: #f78166;
+  border-radius: 50%;
+  animation: tracefix-spin 0.7s linear infinite;
+}
+
+@keyframes tracefix-spin {
+  to { transform: rotate(360deg); }
+}
+
+#tracefix-loading p {
+  color: #8b949e;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Error state */
+#tracefix-error {
+  text-align: center;
+  padding: 24px 16px;
+  color: #8b949e;
+}
+
+#tracefix-error .tracefix-error-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+#tracefix-error p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#tracefix-retry {
+  width: 100%;
+}
+
+/* Result */
+#tracefix-result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Error summary section */
+.tracefix-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tracefix-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+}
+
+/* Error type pill */
+.tracefix-error-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Summary text */
+.tracefix-summary {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #c9d1d9;
+  line-height: 1.6;
+}
+
+/* Divider */
+.tracefix-divider {
+  height: 1px;
+  background: #21262d;
+  margin: 2px 0;
+}
+
+/* Fix proposal */
+.tracefix-fix-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tracefix-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: #79c0ff;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Code diff block */
+.tracefix-diff {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tracefix-diff-line {
+  display: flex;
+  align-items: flex-start;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 1px 12px;
+}
+
+.tracefix-diff-line.removed {
+  background: rgba(248, 81, 73, 0.1);
+  color: #ffa198;
+}
+
+.tracefix-diff-line.added {
+  background: rgba(63, 185, 80, 0.1);
+  color: #7ee787;
+}
+
+.tracefix-diff-line.context {
+  color: #8b949e;
+}
+
+.tracefix-diff-sign {
+  width: 14px;
+  flex-shrink: 0;
+  user-select: none;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.tracefix-diff-code {
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* Explanation */
+.tracefix-explanation {
+  background: rgba(56, 139, 253, 0.08);
+  border: 1px solid rgba(56, 139, 253, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #79c0ff;
+  line-height: 1.6;
+}
+
+/* Action buttons */
+.tracefix-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tracefix-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 7px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  letter-spacing: 0.01em;
+}
+
+.tracefix-btn:active {
+  transform: scale(0.97);
+}
+
+.tracefix-btn-primary {
+  background: #238636;
+  color: #ffffff;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+}
+
+.tracefix-btn-primary:hover {
+  background: #2ea043;
+}
+
+.tracefix-btn-secondary {
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+}
+
+.tracefix-btn-secondary:hover {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+/* Footer */
+#tracefix-footer {
+  padding: 8px 16px;
+  border-top: 1px solid #21262d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tracefix-powered-by {
+  font-size: 10px;
+  color: #484f58;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tracefix-confidence {
+  font-size: 10px;
+  font-weight: 600;
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.2);
+  border-radius: 4px;
+  padding: 2px 7px;
+}

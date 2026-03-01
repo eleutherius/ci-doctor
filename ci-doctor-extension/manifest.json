@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "CI Doctor",
+  "version": "1.0.0",
+  "description": "AI-powered CI log analyzer. Detects failures on GitHub Actions and suggests fixes instantly.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://*.run.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "CI Doctor — Analyze CI Logs"
+  }
+}
