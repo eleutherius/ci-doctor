@@ -86,7 +86,7 @@ function runAnalysis() {
   setLoading();
 
   waitForLog(5000, platform)
-    .then((log) => callBackend(log))
+    .then((log) => callBackend(log, updateLoadingMessage))
     .then((data) => renderResult(data, platform))
     .catch((err) => setError(err.message));
 }
@@ -442,7 +442,10 @@ async function fetchJenkinsArtifactsText() {
 
 // ─── Backend call ────────────────────────────────────────────────────────────
 
-async function callBackend(log) {
+// Module-level: provider used for the current analysis (set by callBackend)
+let _activeProvider = "gemini";
+
+async function callBackend(log, onStatus = () => {}) {
   const context = buildPageContext();
 
   // While the real backend isn't deployed yet, use the mock
@@ -450,10 +453,27 @@ async function callBackend(log) {
     return mockGeminiResponse(log, context);
   }
 
+  const stored = await chrome.storage.local.get([
+    "github_pat", "llm_provider", "llm_model", "openai_api_key", "anthropic_api_key",
+  ]);
+
+  const provider = stored.llm_provider || "gemini";
+  _activeProvider = provider;
+  const llm_api_key =
+    provider === "openai"    ? (stored.openai_api_key    || null) :
+    provider === "anthropic" ? (stored.anthropic_api_key || null) : null;
+
   const resp = await fetch(`${BACKEND_URL}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ log, context }),
+    body: JSON.stringify({
+      log,
+      context,
+      github_pat:  stored.github_pat  || null,
+      provider,
+      model:       stored.llm_model   || null,
+      llm_api_key,
+    }),
   });
 
   if (!resp.ok) {
@@ -461,7 +481,35 @@ async function callBackend(log) {
     throw new Error(`HTTP ${resp.status}: ${text}`);
   }
 
-  return resp.json();
+  // ── Read SSE stream ────────────────────────────────────────────────────────
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE events are separated by "\n\n"
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop(); // keep last incomplete chunk
+
+    for (const part of parts) {
+      if (!part.startsWith("data: ")) continue;
+      let event;
+      try { event = JSON.parse(part.slice(6)); } catch { continue; }
+
+      if (event.status === "done") {
+        if (event.provider) _activeProvider = event.provider;
+        return event.result;
+      }
+      if (event.status === "error") throw new Error(event.message);
+      if (event.message) onStatus(event.message);
+    }
+  }
+
+  throw new Error("Stream ended without a result.");
 }
 
 /** Collects repo/run metadata from the current URL and page title. */
@@ -574,7 +622,7 @@ function showPopup() {
     </div>
     <div id="tracefix-body"></div>
     <div id="tracefix-footer">
-      <span class="tracefix-powered-by">⚡ Powered by Gemini</span>
+      <span class="tracefix-powered-by">⚡ Powered by AI</span>
     </div>
   `;
   document.body.appendChild(popup);
@@ -586,22 +634,99 @@ function setLoading() {
   document.getElementById("tracefix-body").innerHTML = `
     <div id="tracefix-loading">
       <div class="tracefix-spinner"></div>
-      <p>Analyzing CI logs with Gemini...</p>
+      <p id="tracefix-loading-msg">Analyzing CI logs...</p>
     </div>
   `;
+}
+
+function updateLoadingMessage(msg) {
+  const el = document.getElementById("tracefix-loading-msg");
+  if (el) el.textContent = msg;
+}
+
+// Models available per provider (used by the quick-switch in the error state)
+const _QS_MODELS = {
+  gemini:    ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.5-flash"],
+  openai:    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6"],
+};
+
+async function populateQsModels(provider, selectedModel) {
+  const sel = document.getElementById("qs-model");
+  if (!sel) return;
+
+  // Show static fallback immediately so the dropdown is never empty
+  const fallback = _QS_MODELS[provider] || [];
+  sel.innerHTML = fallback.map((m) => `<option value="${m}">${m}</option>`).join("");
+  if (selectedModel && fallback.includes(selectedModel)) sel.value = selectedModel;
+
+  // Fetch live model list from backend (fire-and-forget, updates dropdown when ready)
+  try {
+    const stored = await chrome.storage.local.get(["openai_api_key", "anthropic_api_key"]);
+    const api_key = provider === "openai"    ? (stored.openai_api_key    || null)
+                  : provider === "anthropic" ? (stored.anthropic_api_key || null)
+                  : null;
+    const resp = await fetch(`${BACKEND_URL}/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, api_key }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data.models) && data.models.length > 0) {
+        const current = sel.value;  // preserve current selection if possible
+        sel.innerHTML = data.models.map((m) => `<option value="${m}">${m}</option>`).join("");
+        if (data.models.includes(current)) sel.value = current;
+        else if (selectedModel && data.models.includes(selectedModel)) sel.value = selectedModel;
+      }
+    }
+  } catch { /* keep fallback */ }
 }
 
 function setError(message) {
   const body = document.getElementById("tracefix-body");
   if (!body) return; // popup was closed before error arrived
+
   body.innerHTML = `
     <div id="tracefix-error">
       <div class="tracefix-error-icon">⚠️</div>
       <p>${message.replace(/\n/g, "<br>")}</p>
+      <div class="tracefix-quick-switch">
+        <div class="tracefix-qs-row">
+          <span class="tracefix-qs-label">Provider</span>
+          <select class="tracefix-qs-select" id="qs-provider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic Claude</option>
+          </select>
+        </div>
+        <div class="tracefix-qs-row">
+          <span class="tracefix-qs-label">Model</span>
+          <select class="tracefix-qs-select" id="qs-model"></select>
+        </div>
+      </div>
       <button class="tracefix-btn tracefix-btn-secondary" id="tracefix-retry">↺ Retry</button>
     </div>
   `;
-  document.getElementById("tracefix-retry").addEventListener("click", () => {
+
+  // Pre-populate from saved settings, then fetch live list
+  chrome.storage.local.get(["llm_provider", "llm_model"], (data) => {
+    const provider = data.llm_provider || "gemini";
+    document.getElementById("qs-provider").value = provider;
+    populateQsModels(provider, data.llm_model);
+  });
+
+  document.getElementById("qs-provider").addEventListener("change", (e) => {
+    populateQsModels(e.target.value, null);
+  });
+
+  document.getElementById("tracefix-retry").addEventListener("click", async () => {
+    const provider = document.getElementById("qs-provider")?.value;
+    const model    = document.getElementById("qs-model")?.value;
+    if (provider && model) {
+      await chrome.storage.local.set({ llm_provider: provider, llm_model: model });
+    }
     closePopup();
     runAnalysis();
   });
@@ -657,7 +782,9 @@ function renderResult(data, platform = "github") {
     </div>
   `;
 
-  // Confidence badge in footer
+  // Update "Powered by" label and confidence in footer
+  const providerLabel = { gemini: "Gemini", openai: "OpenAI", anthropic: "Claude" }[_activeProvider] || "AI";
+  footer.innerHTML = `<span class="tracefix-powered-by">⚡ Powered by ${providerLabel}</span>`;
   if (data.confidence) {
     footer.innerHTML += `<span class="tracefix-confidence">${data.confidence}% confidence</span>`;
   }

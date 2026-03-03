@@ -333,6 +333,50 @@
   border-color: #8b949e;
 }
 
+/* Quick model switch (shown on quota errors) */
+.tracefix-quick-switch {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+}
+
+.tracefix-qs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tracefix-qs-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8b949e;
+  width: 54px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tracefix-qs-select {
+  flex: 1;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 5px;
+  color: #e6edf3;
+  font-size: 11px;
+  padding: 4px 7px;
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tracefix-qs-select:focus { border-color: #58a6ff; }
+
 /* Footer */
 #tracefix-footer {
   padding: 8px 16px;
