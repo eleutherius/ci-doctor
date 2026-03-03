@@ -333,7 +333,17 @@
   border-color: #8b949e;
 }
 
-/* Quick model switch (shown on quota errors) */
+/* Pre-flight ready screen */
+#tracefix-ready {
+  padding: 8px 0 4px;
+}
+
+#tracefix-ready #tracefix-start {
+  margin-top: 4px;
+  width: 100%;
+}
+
+/* Quick model switch (shown on quota errors and ready screen) */
 .tracefix-quick-switch {
   background: #161b22;
   border: 1px solid #30363d;

@@ -83,12 +83,7 @@ function runAnalysis() {
   }
 
   showPopup();
-  setLoading();
-
-  waitForLog(5000, platform)
-    .then((log) => callBackend(log, updateLoadingMessage))
-    .then((data) => renderResult(data, platform))
-    .catch((err) => setError(err.message));
+  showReady(platform);
 }
 
 /** Tries GitHub API first (full log), then falls back to DOM extraction. */
@@ -442,8 +437,9 @@ async function fetchJenkinsArtifactsText() {
 
 // ─── Backend call ────────────────────────────────────────────────────────────
 
-// Module-level: provider used for the current analysis (set by callBackend)
-let _activeProvider = "gemini";
+// Module-level state
+let _activeProvider  = "gemini";
+let _currentPlatform = "github";  // set by showReady(), used by setError()
 
 async function callBackend(log, onStatus = () => {}) {
   const context = buildPageContext();
@@ -630,6 +626,56 @@ function showPopup() {
   document.getElementById("tracefix-close").addEventListener("click", () => popup.remove());
 }
 
+/** Pre-flight screen: shows provider/model selector before starting analysis. */
+function showReady(platform) {
+  _currentPlatform = platform;
+  const body = document.getElementById("tracefix-body");
+
+  body.innerHTML = `
+    <div id="tracefix-ready">
+      <div class="tracefix-quick-switch">
+        <div class="tracefix-qs-row">
+          <span class="tracefix-qs-label">Provider</span>
+          <select class="tracefix-qs-select" id="qs-provider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic Claude</option>
+          </select>
+        </div>
+        <div class="tracefix-qs-row">
+          <span class="tracefix-qs-label">Model</span>
+          <select class="tracefix-qs-select" id="qs-model"></select>
+        </div>
+      </div>
+      <button class="tracefix-btn tracefix-btn-primary" id="tracefix-start">▶ Analyze</button>
+    </div>
+  `;
+
+  // Load saved settings, then fetch live model list
+  chrome.storage.local.get(["llm_provider", "llm_model"], (data) => {
+    const provider = data.llm_provider || "gemini";
+    document.getElementById("qs-provider").value = provider;
+    populateQsModels(provider, data.llm_model);
+  });
+
+  document.getElementById("qs-provider").addEventListener("change", (e) => {
+    populateQsModels(e.target.value, null);
+  });
+
+  document.getElementById("tracefix-start").addEventListener("click", async () => {
+    const provider = document.getElementById("qs-provider")?.value;
+    const model    = document.getElementById("qs-model")?.value;
+    if (provider && model) {
+      await chrome.storage.local.set({ llm_provider: provider, llm_model: model });
+    }
+    setLoading();
+    waitForLog(5000, platform)
+      .then((log) => callBackend(log, updateLoadingMessage))
+      .then((data) => renderResult(data, platform))
+      .catch((err) => setError(err.message));
+  });
+}
+
 function setLoading() {
   document.getElementById("tracefix-body").innerHTML = `
     <div id="tracefix-loading">
@@ -692,43 +738,12 @@ function setError(message) {
     <div id="tracefix-error">
       <div class="tracefix-error-icon">⚠️</div>
       <p>${message.replace(/\n/g, "<br>")}</p>
-      <div class="tracefix-quick-switch">
-        <div class="tracefix-qs-row">
-          <span class="tracefix-qs-label">Provider</span>
-          <select class="tracefix-qs-select" id="qs-provider">
-            <option value="gemini">Google Gemini</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic Claude</option>
-          </select>
-        </div>
-        <div class="tracefix-qs-row">
-          <span class="tracefix-qs-label">Model</span>
-          <select class="tracefix-qs-select" id="qs-model"></select>
-        </div>
-      </div>
       <button class="tracefix-btn tracefix-btn-secondary" id="tracefix-retry">↺ Retry</button>
     </div>
   `;
 
-  // Pre-populate from saved settings, then fetch live list
-  chrome.storage.local.get(["llm_provider", "llm_model"], (data) => {
-    const provider = data.llm_provider || "gemini";
-    document.getElementById("qs-provider").value = provider;
-    populateQsModels(provider, data.llm_model);
-  });
-
-  document.getElementById("qs-provider").addEventListener("change", (e) => {
-    populateQsModels(e.target.value, null);
-  });
-
-  document.getElementById("tracefix-retry").addEventListener("click", async () => {
-    const provider = document.getElementById("qs-provider")?.value;
-    const model    = document.getElementById("qs-model")?.value;
-    if (provider && model) {
-      await chrome.storage.local.set({ llm_provider: provider, llm_model: model });
-    }
-    closePopup();
-    runAnalysis();
+  document.getElementById("tracefix-retry").addEventListener("click", () => {
+    showReady(_currentPlatform);
   });
 }
 
