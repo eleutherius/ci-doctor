@@ -47,26 +47,26 @@ class AnalyzeResponse(BaseModel):
 # ─── Gemini client ────────────────────────────────────────────────────────────
 
 client = genai.Client(
-    vertexai=True,
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-    location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+    api_key=os.environ.get("GEMINI_API_KEY"),
 )
 
 SYSTEM_PROMPT = """
 You are "CI Doctor", an expert Senior DevOps Engineer and CI/CD AI Agent.
-Analyze the failed CI/CD pipeline log and determine the exact root cause.
-Provide a concise, actionable fix in the JSON schema provided.
+Analyze the failed CI/CD pipeline log and determine the root cause.
+ALWAYS produce a best-effort diagnosis — even if the log is short or partial.
+Never say the log is insufficient; instead infer the most likely cause from whatever is available.
 
 Field rules:
 - error_type: short label (e.g. "ModuleNotFoundError", "Docker Build Failure", "Peer Dependency Conflict")
-- summary: 1-2 sentences describing what went wrong
-- file: the single file that needs editing (e.g. "requirements.txt", "Dockerfile", ".github/workflows/ci.yml")
+- summary: 1-2 sentences describing what likely went wrong (use "likely" if uncertain)
+- file: the single most probable file that needs editing
 - fix_diff: diff lines showing the minimal change needed. Each line has:
     "type": "added" | "removed" | "context"
     "code": the exact line content (no leading +/-/space)
   Include 1-2 context lines around the change for clarity.
-- explanation: 2-3 sentences explaining why this fix resolves the issue
-- confidence: integer 0-100 representing your confidence in this diagnosis
+  If you cannot determine the exact diff, provide a representative example of what to change.
+- explanation: 2-3 sentences explaining why this fix likely resolves the issue
+- confidence: integer 0-100 (use low values like 20-40 if log is sparse, but always provide a diagnosis)
 """
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
