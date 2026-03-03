@@ -11,6 +11,8 @@
   "host_permissions": [
     "https://github.com/*",
     "https://api.github.com/*",
+    "https://pipelines.actions.githubusercontent.com/*",
+    "https://*.blob.core.windows.net/*",
     "https://*.run.app/*"
   ],
   "options_page": "popup.html",

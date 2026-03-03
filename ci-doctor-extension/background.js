@@ -6,9 +6,9 @@
  */
 
 chrome.action.onClicked.addListener(async (tab) => {
-  // Guard: only run on GitHub pages
-  if (!tab.url || !tab.url.startsWith("https://github.com/")) {
-    console.warn("[TraceFix] Not a GitHub page — skipping.");
+  // Skip internal browser pages where injection is impossible
+  if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://") || tab.url.startsWith("about:")) {
+    console.warn("[CI Doctor] Cannot run on this page.");
     return;
   }
 

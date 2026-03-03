@@ -6,6 +6,33 @@
 
 const BACKEND_URL = "http://127.0.0.1:8080";
 
+// ─── Platform detection ───────────────────────────────────────────────────────
+
+/**
+ * Returns "github" | "jenkins" | "unknown".
+ * Jenkins can live on any domain so we check DOM markers + URL patterns.
+ */
+function detectPlatform() {
+  const url = window.location.href;
+  if (url.includes("github.com")) return "github";
+
+  // Jenkins DOM markers
+  const hasJenkinsDOM =
+    !!document.querySelector("#jenkins, .jenkins-pane, #jenkins-home-link") ||
+    document.title.toLowerCase().includes("jenkins");
+
+  // Jenkins URL patterns: classic /job/…/console, Blue Ocean /blue/organizations/…/pipeline
+  const path = window.location.pathname;
+  const isJenkinsUrl =
+    /\/job\/[^/]+\/\d+\//.test(path) ||
+    path.includes("/console") ||
+    path.includes("pipeline-console") ||
+    path.includes("/blue/organizations/");
+
+  if (hasJenkinsDOM || isJenkinsUrl) return "jenkins";
+  return "unknown";
+}
+
 // ─── Entry point ────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -32,45 +59,93 @@ function runAnalysis() {
   // Only one popup at a time
   if (document.getElementById("tracefix-popup")) return;
 
-  // Must be on a job page, not just the run overview
-  if (!window.location.pathname.includes("/job/")) {
-    showPopup();
-    setError("Please open a specific job first.\n\nOn this page click the failed job name (e.g. \"build\", \"test\") in the left sidebar — then click CI Doctor again.");
-    return;
+  const platform = detectPlatform();
+
+  if (platform === "github") {
+    // Must be on a job page, not just the run overview
+    if (!window.location.pathname.includes("/job/")) {
+      showPopup();
+      setError("Please open a specific job first.\n\nOn this page click the failed job name (e.g. \"build\", \"test\") in the left sidebar — then click CI Doctor again.");
+      return;
+    }
+  } else if (platform === "jenkins") {
+    const path = window.location.pathname;
+    const isOnBuildPage =
+      path.includes("/console") ||
+      path.includes("pipeline-console") ||
+      // Blue Ocean: /blue/organizations/{controller}/{job}/detail/{job}/{build}/pipeline
+      /\/blue\/organizations\/[^/]+\/[^/]+\/detail\/[^/]+\/\d+\//.test(path);
+    if (!isOnBuildPage) {
+      showPopup();
+      setError("Please open the build page.\n\nClassic Jenkins: click \"Console Output\".\nBlue Ocean: open the failed pipeline run — then click CI Doctor again.");
+      return;
+    }
   }
 
   showPopup();
   setLoading();
 
-  // GitHub loads logs asynchronously — wait up to 5 s for content to appear
-  waitForLog(5000)
+  waitForLog(5000, platform)
     .then((log) => callBackend(log))
-    .then((data) => renderResult(data))
+    .then((data) => renderResult(data, platform))
     .catch((err) => setError(err.message));
 }
 
 /** Tries GitHub API first (full log), then falls back to DOM extraction. */
-async function waitForLog(timeout) {
-  // 1. GitHub API — full log, not limited by virtual scroll
-  try {
-    const apiLog = await fetchJobLogViaAPI();
-    if (apiLog && apiLog.length > 50) return apiLog;
-  } catch (e) {
-    console.log("[CI Doctor] API log fetch failed, falling back to DOM:", e.message);
+async function waitForLog(timeout, platform = "github") {
+  let mainLog = null;
+
+  if (platform === "github") {
+    // 1. GitHub API — full log, not limited by virtual scroll
+    try {
+      const apiLog = await fetchJobLogViaAPI();
+      if (apiLog && apiLog.length > 50) {
+        console.log(`[CI Doctor] Using API log (${apiLog.length} chars)`);
+        mainLog = apiLog;
+      } else {
+        console.log("[CI Doctor] API returned empty/short log, falling back to DOM");
+      }
+    } catch (e) {
+      console.log("[CI Doctor] API log fetch failed, falling back to DOM:", e.message);
+    }
   }
 
-  // 2. DOM polling fallback
+  // 2. DOM polling fallback (GitHub) or primary (Jenkins)
+  if (!mainLog) {
+    mainLog = await pollDomForLog(timeout, platform);
+  }
+
+  // 3. For Jenkins: augment with build artifacts (test reports, error logs, etc.)
+  if (platform === "jenkins") {
+    try {
+      const artifactText = await fetchJenkinsArtifactsText();
+      if (artifactText) {
+        console.log("[CI Doctor] Appending Jenkins artifacts to log");
+        mainLog += artifactText;
+      }
+    } catch (e) {
+      console.log("[CI Doctor] Artifact fetch failed (non-fatal):", e.message);
+    }
+  }
+
+  return mainLog;
+}
+
+/** Polls the DOM until a log appears or timeout is reached. */
+function pollDomForLog(timeout, platform) {
   const MIN_LOG_LENGTH = 80;
+  const extractFn = platform === "jenkins" ? extractJenkinsLog : extractFailedLog;
   return new Promise((resolve, reject) => {
     const start = Date.now();
     function attempt() {
-      const log = extractFailedLog();
+      const log = extractFn();
       if (log && log.length >= MIN_LOG_LENGTH) return resolve(log);
       if (Date.now() - start >= timeout) {
         if (log) return resolve(log);
         return reject(new Error(
-          "No log content found on this page.\n\n" +
-          "Try clicking on a failed step to expand its full log, then retry."
+          platform === "jenkins"
+            ? "No console output found.\n\nMake sure you are on the \"Console Output\" page of a finished Jenkins build."
+            : "No log content found on this page.\n\nTry clicking on a failed step to expand its full log, then retry."
         ));
       }
       setTimeout(attempt, 500);
@@ -90,10 +165,12 @@ async function fetchJobLogViaAPI() {
   const { github_pat: token } = await chrome.storage.local.get("github_pat");
   const headers = token ? { Authorization: `token ${token}` } : {};
 
+  console.log(`[CI Doctor] Fetching logs for job ${jobId} in ${repoBase} (auth: ${!!headers.Authorization})`);
   const resp = await fetch(
     `https://api.github.com/repos/${repoBase}/actions/jobs/${jobId}/logs`,
     { headers, redirect: "follow" }
   );
+  console.log(`[CI Doctor] Log API response: ${resp.status} url=${resp.url}`);
   if (!resp.ok) return null;
 
   const text = await resp.text();
@@ -198,6 +275,171 @@ function extractFailedLog() {
   return null;
 }
 
+// ─── Jenkins log extraction ───────────────────────────────────────────────────
+
+/**
+ * Extracts the console log from a Jenkins build page.
+ * Supports classic Jenkins and Blue Ocean pipeline views.
+ */
+function extractJenkinsLog() {
+  const log = (...args) => console.log("[CI Doctor]", ...args);
+  log("Jenkins extraction on:", window.location.href);
+
+  // 1. Classic Jenkins: <pre id="out"> or <div id="out"><pre>
+  const classicSelectors = [
+    "pre#out",
+    "#out pre",
+    ".console-output",
+    "pre.console-output",
+  ];
+  for (const sel of classicSelectors) {
+    const el = document.querySelector(sel);
+    if (el && el.textContent.length > 50) {
+      log(`Classic Jenkins log via "${sel}" (${el.textContent.length} chars)`);
+      return truncateLog(el.textContent);
+    }
+  }
+
+  // 2. Blue Ocean pipeline view: collect all visible log text from failed steps
+  // Blue Ocean renders logs inside elements with class names containing "log"
+  const blueOceanContainerSelectors = [
+    "[class*='LogConsole']",
+    "[class*='log-body']",
+    "[class*='log-content']",
+    "[class*='step-log']",
+    "[class*='pipeline-log']",
+  ];
+  for (const sel of blueOceanContainerSelectors) {
+    const container = document.querySelector(sel);
+    if (container && container.textContent.length > 50) {
+      log(`Blue Ocean container via "${sel}" (${container.textContent.length} chars)`);
+      return truncateLog(container.textContent);
+    }
+  }
+
+  // Blue Ocean: individual log line spans (when logs are rendered line-by-line)
+  const blueOceanLineSelectors = [
+    ".log-body .log-text",
+    "[class*='LogConsole'] span",
+    ".pipeline-log-text",
+    ".log-text",
+  ];
+  for (const sel of blueOceanLineSelectors) {
+    const lines = document.querySelectorAll(sel);
+    if (lines.length > 5) {
+      log(`Blue Ocean lines via "${sel}" (${lines.length} lines)`);
+      return truncateLog(Array.from(lines).map((l) => l.textContent).join("\n"));
+    }
+  }
+
+  // 3. Any large <pre> block as last resort
+  const pre = [...document.querySelectorAll("pre")].find((p) => p.textContent.length > 200);
+  if (pre) {
+    log(`Fallback <pre> (${pre.textContent.length} chars)`);
+    return truncateLog(pre.textContent);
+  }
+
+  log("FAILED — Jenkins log not found. Pre elements:", [...document.querySelectorAll("pre")].map((e) => `${e.id || e.className}(${e.textContent.length})`).join(", "));
+  return null;
+}
+
+/** Keeps beginning + end of long logs (like fetchJobLogViaAPI). */
+function truncateLog(text) {
+  if (text.length <= 12000) return text;
+  return text.slice(0, 6000) + "\n...[truncated middle]...\n" + text.slice(-4000);
+}
+
+// ─── Jenkins artifact fetching ────────────────────────────────────────────────
+
+/**
+ * Fetches text content from Jenkins build artifacts (test reports, error logs, etc.).
+ * Uses the browser's session cookies automatically — no extra auth needed.
+ * Returns a formatted string with artifact contents, or null if nothing useful found.
+ */
+async function fetchJenkinsArtifactsText() {
+  const origin = window.location.origin;
+  const path = window.location.pathname;
+  const log = (...args) => console.log("[CI Doctor]", ...args);
+  let artifacts = [];
+
+  // ── Blue Ocean REST API ──────────────────────────────────────────────────────
+  // Pattern: /blue/organizations/{controller}/{job}/detail/{job}/{build}/...
+  const blueMatch = path.match(/\/blue\/organizations\/([^/]+)\/([^/]+)\/detail\/[^/]+\/(\d+)/);
+  if (blueMatch) {
+    const [, controller, job, build] = blueMatch;
+    try {
+      const resp = await fetch(
+        `${origin}/blue/rest/organizations/${controller}/pipelines/${job}/runs/${build}/artifacts/`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        artifacts = data.map((a) => ({ name: a.name, url: `${origin}${a.url}`, size: a.size }));
+        log(`Blue Ocean: ${artifacts.length} artifacts found`);
+      }
+    } catch (e) {
+      log("Blue Ocean artifact API failed:", e.message);
+    }
+  }
+
+  // ── Classic Jenkins API ──────────────────────────────────────────────────────
+  // Pattern: /job/{path}/{build}/...  (path may contain nested /job/ segments)
+  if (!artifacts.length) {
+    const jobMatch = path.match(/^((?:\/job\/[^/]+)+)\/(\d+)/);
+    if (jobMatch) {
+      const [, jobPath, build] = jobMatch;
+      try {
+        const resp = await fetch(
+          `${origin}${jobPath}/${build}/api/json?tree=artifacts[fileName,relativePath]`
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          artifacts = (data.artifacts || []).map((a) => ({
+            name: a.fileName,
+            url: `${origin}${jobPath}/${build}/artifact/${a.relativePath}`,
+          }));
+          log(`Classic Jenkins: ${artifacts.length} artifacts found`);
+        }
+      } catch (e) {
+        log("Classic Jenkins artifact API failed:", e.message);
+      }
+    }
+  }
+
+  if (!artifacts.length) return null;
+
+  // ── Filter: only small text-based artifacts likely to contain error details ──
+  const relevant = artifacts.filter((a) => {
+    const n = a.name.toLowerCase();
+    return /\.(xml|json|log|txt)$/.test(n) && (!a.size || a.size < 200_000);
+  });
+  log(`Relevant artifacts: ${relevant.length} of ${artifacts.length}`);
+  if (!relevant.length) return null;
+
+  // ── Download up to 3 artifacts, total ≤ 15 KB added to the prompt ───────────
+  const parts = [];
+  let totalSent = 0;
+  for (const artifact of relevant.slice(0, 3)) {
+    if (totalSent >= 15_000) break;
+    try {
+      const resp = await fetch(artifact.url);
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      // Trim very large files: keep beginning + end
+      const snippet =
+        text.length > 5_000
+          ? text.slice(0, 2_500) + "\n...\n" + text.slice(-2_000)
+          : text;
+      parts.push(`\n\n--- Artifact: ${artifact.name} ---\n${snippet}`);
+      totalSent += snippet.length;
+      log(`Downloaded artifact: ${artifact.name} (${text.length} chars, sent ${snippet.length})`);
+    } catch (e) {
+      log(`Failed to download artifact ${artifact.name}:`, e.message);
+    }
+  }
+
+  return parts.length ? parts.join("") : null;
+}
+
 // ─── Backend call ────────────────────────────────────────────────────────────
 
 async function callBackend(log) {
@@ -225,6 +467,20 @@ async function callBackend(log) {
 /** Collects repo/run metadata from the current URL and page title. */
 function buildPageContext() {
   const url = window.location.href;
+  const platform = detectPlatform();
+
+  if (platform === "jenkins") {
+    // Blue Ocean: /blue/organizations/{controller}/{job}/detail/{job}/{build}/...
+    const blueMatch = url.match(/\/blue\/organizations\/[^/]+\/([^/]+)\/detail\/[^/]+\/(\d+)/);
+    if (blueMatch) {
+      return { repo: `Jenkins (Blue Ocean): ${blueMatch[1]} #${blueMatch[2]}`, url, title: document.title };
+    }
+    // Classic Jenkins: /job/{folder}/job/{name}/{build}/console
+    const jobMatch = url.match(/\/job\/([^/]+(?:\/job\/[^/]+)*)/);
+    const jobName = jobMatch ? jobMatch[1].replace(/\/job\//g, "/") : "Jenkins Job";
+    return { repo: `Jenkins: ${jobName}`, url, title: document.title };
+  }
+
   const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
   return {
     repo: match ? match[1] : "unknown",
@@ -336,7 +592,9 @@ function setLoading() {
 }
 
 function setError(message) {
-  document.getElementById("tracefix-body").innerHTML = `
+  const body = document.getElementById("tracefix-body");
+  if (!body) return; // popup was closed before error arrived
+  body.innerHTML = `
     <div id="tracefix-error">
       <div class="tracefix-error-icon">⚠️</div>
       <p>${message.replace(/\n/g, "<br>")}</p>
@@ -349,7 +607,7 @@ function setError(message) {
   });
 }
 
-function renderResult(data) {
+function renderResult(data, platform = "github") {
   const body = document.getElementById("tracefix-body");
   const footer = document.getElementById("tracefix-footer");
 
@@ -393,7 +651,7 @@ function renderResult(data) {
       <div class="tracefix-explanation">${escapeHtml(data.explanation)}</div>
 
       <div class="tracefix-actions">
-        <button class="tracefix-btn tracefix-btn-primary" id="tracefix-apply">Apply Fix</button>
+        <button class="tracefix-btn tracefix-btn-primary" id="tracefix-apply">${platform === "jenkins" ? "Copy Fix" : "Apply Fix"}</button>
         <button class="tracefix-btn tracefix-btn-secondary" id="tracefix-copy">Copy Diff</button>
       </div>
     </div>
@@ -404,13 +662,27 @@ function renderResult(data) {
     footer.innerHTML += `<span class="tracefix-confidence">${data.confidence}% confidence</span>`;
   }
 
-  // Apply fix — directly via GitHub API if token exists, otherwise open editor
+  // Apply fix button
   document.getElementById("tracefix-apply").addEventListener("click", async () => {
     const btn = document.getElementById("tracefix-apply");
+
+    // Jenkins: copy added lines to clipboard (no direct API integration)
+    if (platform === "jenkins") {
+      const content = (data.fix_diff || [])
+        .filter((l) => l.type === "added")
+        .map((l) => l.code)
+        .join("\n");
+      await navigator.clipboard.writeText(content);
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy Fix"; }, 2000);
+      return;
+    }
+
+    // GitHub: try direct API commit, fall back to opening editor
     btn.textContent = "Applying...";
     btn.disabled = true;
     try {
-      const { token } = await chrome.storage.local.get("github_pat");
+      const { github_pat: token } = await chrome.storage.local.get("github_pat");
       if (token) {
         const result = await applyFixViaAPI(data.file, data.fix_diff, token);
         if (result.success) {
