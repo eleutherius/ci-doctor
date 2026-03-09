@@ -25,8 +25,8 @@ resource "google_project_service" "artifactregistry" {
   disable_on_destroy = false
 }
 
-resource "google_project_service" "secretmanager" {
-  service            = "secretmanager.googleapis.com"
+resource "google_project_service" "aiplatform" {
+  service            = "aiplatform.googleapis.com"
   disable_on_destroy = false
 }
 
@@ -45,23 +45,6 @@ locals {
   image_url = "${var.region}-docker.pkg.dev/${var.project_id}/ci-doctor/backend:${var.image_tag}"
 }
 
-# ── Secret Manager — Gemini API key ──────────────────────────────────────────
-
-resource "google_secret_manager_secret" "gemini_api_key" {
-  secret_id = "gemini-api-key"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.secretmanager]
-}
-
-resource "google_secret_manager_secret_version" "gemini_api_key" {
-  secret      = google_secret_manager_secret.gemini_api_key.id
-  secret_data = var.gemini_api_key
-}
-
 # ── Service account for Cloud Run ─────────────────────────────────────────────
 
 resource "google_service_account" "ci_doctor" {
@@ -69,10 +52,11 @@ resource "google_service_account" "ci_doctor" {
   display_name = "CI Doctor Cloud Run SA"
 }
 
-resource "google_secret_manager_secret_iam_member" "run_reads_gemini_key" {
-  secret_id = google_secret_manager_secret.gemini_api_key.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.ci_doctor.email}"
+# Allow the SA to call Vertex AI (Gemini)
+resource "google_project_iam_member" "ci_doctor_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.ci_doctor.email}"
 }
 
 # ── Cloud Run service ─────────────────────────────────────────────────────────
@@ -113,22 +97,12 @@ resource "google_cloud_run_v2_service" "ci_doctor" {
         name  = "GOOGLE_CLOUD_LOCATION"
         value = var.region
       }
-
-      env {
-        name = "GEMINI_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.gemini_api_key.secret_id
-            version = "latest"
-          }
-        }
-      }
     }
   }
 
   depends_on = [
     google_project_service.run,
-    google_secret_manager_secret_iam_member.run_reads_gemini_key,
+    google_project_iam_member.ci_doctor_vertex,
   ]
 }
 

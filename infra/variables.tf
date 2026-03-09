@@ -15,12 +15,6 @@ variable "image_tag" {
   default     = "latest"
 }
 
-variable "gemini_api_key" {
-  description = "Gemini API key (stored in Secret Manager)"
-  type        = string
-  sensitive   = true
-}
-
 variable "min_instances" {
   description = "Minimum number of Cloud Run instances (0 = scale to zero)"
   type        = number

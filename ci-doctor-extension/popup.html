@@ -10,7 +10,7 @@
       background: #0d1117;
       color: #e6edf3;
       padding: 20px;
-      width: 320px;
+      width: 300px;
     }
     .header {
       display: flex;
@@ -20,7 +20,7 @@
       padding-bottom: 16px;
       border-bottom: 1px solid #21262d;
     }
-    .logo { font-size: 20px; font-weight: 700; color: #58a6ff; }
+    .logo  { font-size: 20px; font-weight: 700; color: #58a6ff; }
     .title { font-size: 14px; font-weight: 600; }
     label {
       display: block;
@@ -31,7 +31,7 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-    input[type="password"], input[type="text"] {
+    input[type="password"] {
       width: 100%;
       background: #161b22;
       border: 1px solid #30363d;
@@ -51,30 +51,8 @@
     }
     .hint a { color: #58a6ff; text-decoration: none; }
     .hint a:hover { text-decoration: underline; }
-    .row { display: flex; gap: 8px; margin-top: 14px; }
-    button {
-      flex: 1;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-    }
-    .btn-primary { background: #238636; color: #fff; }
-    .btn-primary:hover { background: #2ea043; }
-    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-    .btn-secondary:hover { background: #30363d; }
-    #status {
-      margin-top: 12px;
-      font-size: 12px;
-      text-align: center;
-      min-height: 16px;
-    }
-    .status-ok { color: #3fb950; }
-    .status-err { color: #f85149; }
     .scopes {
-      margin-top: 16px;
+      margin-top: 12px;
       padding: 10px;
       background: #161b22;
       border: 1px solid #30363d;
@@ -94,45 +72,35 @@
       font-size: 11px;
       margin: 2px 2px 0 0;
     }
-    .section-divider {
-      border: none;
-      border-top: 1px solid #21262d;
-      margin: 16px 0;
-    }
-    .field { margin-top: 14px; }
-    select {
-      width: 100%;
-      background: #161b22;
-      border: 1px solid #30363d;
+    .row { display: flex; gap: 8px; margin-top: 16px; }
+    button {
+      flex: 1;
+      padding: 8px;
       border-radius: 6px;
-      color: #e6edf3;
       font-size: 13px;
-      padding: 8px 10px;
-      outline: none;
+      font-weight: 600;
       cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
+      border: none;
     }
-    select:focus { border-color: #58a6ff; }
-    .model-info {
+    .btn-primary   { background: #238636; color: #fff; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .btn-secondary:hover { background: #30363d; }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      text-align: center;
+      min-height: 16px;
+    }
+    .status-ok  { color: #3fb950; }
+    .status-err { color: #f85149; }
+    .powered-by {
+      margin-top: 16px;
+      text-align: center;
       font-size: 11px;
       color: #8b949e;
-      margin-top: 5px;
-      line-height: 1.4;
     }
-    .quota-badge {
-      display: inline-block;
-      border-radius: 3px;
-      padding: 1px 5px;
-      font-size: 10px;
-      font-weight: 600;
-    }
-    .quota-high { background: #1a3a1a; color: #3fb950; border: 1px solid #238636; }
-    .quota-low  { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
-    #api-key-section { margin-top: 14px; }
-    #api-key-section.hidden { display: none; }
+    .powered-by span { color: #58a6ff; }
   </style>
 </head>
 <body>
@@ -141,11 +109,10 @@
     <span class="title">CI Doctor Settings</span>
   </div>
 
-  <!-- ── GitHub PAT ── -->
   <label>GitHub Personal Access Token</label>
   <input type="password" id="pat" placeholder="ghp_..." autocomplete="off" spellcheck="false">
   <p class="hint">
-    Required to apply fixes directly without leaving GitHub.<br>
+    Optional — needed to apply fixes directly without leaving GitHub.<br>
     <a id="token-link" href="#" target="_blank">Generate token →</a>
   </p>
 
@@ -153,40 +120,15 @@
     <strong>Required scopes:</strong><br>
     <span class="scope-tag">repo</span>
     <span class="scope-tag">workflow</span>
-    <span style="font-size:11px; color:#8b949e;">(workflow needed to edit .github/workflows files)</span>
-  </div>
-
-  <hr class="section-divider">
-
-  <!-- ── LLM Provider ── -->
-  <label>LLM Provider</label>
-  <select id="provider">
-    <option value="gemini">Google Gemini</option>
-    <option value="openai">OpenAI</option>
-    <option value="anthropic">Anthropic Claude</option>
-  </select>
-
-  <!-- ── Model ── -->
-  <div class="field">
-    <label>Model</label>
-    <select id="model">
-      <!-- populated dynamically -->
-    </select>
-    <p class="model-info" id="model-info"></p>
-  </div>
-
-  <!-- ── Provider API Key (shown for OpenAI / Anthropic) ── -->
-  <div id="api-key-section" class="hidden">
-    <label id="api-key-label">API Key</label>
-    <input type="password" id="llm-api-key" placeholder="sk-..." autocomplete="off" spellcheck="false">
-    <p class="hint" id="api-key-hint"></p>
   </div>
 
   <div class="row">
-    <button class="btn-primary" id="save">Save</button>
+    <button class="btn-primary"   id="save">Save</button>
     <button class="btn-secondary" id="clear">Clear</button>
   </div>
   <p id="status"></p>
+
+  <p class="powered-by">Analyzed by <span>Vertex AI</span> (Gemini)</p>
 
   <script src="popup.js"></script>
 </body>

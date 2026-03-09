@@ -1,7 +1,6 @@
-project_id     = "your-gcp-project-id"
-region         = "us-central1"
-image_tag      = "latest"
-gemini_api_key = "AIza..."
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+image_tag  = "latest"
 
 # Optional: scaling
 min_instances = 0
